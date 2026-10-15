@@ -1,0 +1,170 @@
+[
+    {
+        "id": "wtvb_fast_read",
+        "type": "modbus-read",
+        "z": "wtvb_full_tab",
+        "name": "WTVB01 Read XYZ",
+        "topic": "WTVB01",
+        "showStatusActivities": true,
+        "logIOActivities": false,
+        "showErrors": true,
+        "showWarnings": true,
+        "unitid": "80",
+        "dataType": "HoldingRegister",
+        "adr": "58",
+        "quantity": "3",
+        "rate": "0.2",
+        "rateUnit": "s",
+        "delayOnStart": true,
+        "startDelayTime": "2",
+        "server": "wtvb_fast_client",
+        "useIOFile": false,
+        "ioFile": "",
+        "useIOForPayload": false,
+        "emptyMsgOnFail": false,
+        "x": 195,
+        "y": 65,
+        "wires": [
+            [
+                "wtvb_fast_process"
+            ],
+            []
+        ]
+    },
+    {
+        "id": "wtvb_fast_process",
+        "type": "function",
+        "z": "wtvb_full_tab",
+        "name": "Process XYZ + Response Rate",
+        "func": "let p = msg.payload;\nif (p && !Array.isArray(p) && Array.isArray(p.data)) p = p.data;\nif (Buffer.isBuffer(p) && p.length >= 6) p = [p.readUInt16BE(0),p.readUInt16BE(2),p.readUInt16BE(4)];\nif (!Array.isArray(p) || p.length < 3) {\n    node.warn('Payload register tidak dikenali: periksa Debug Raw');\n    return [null, {payload:{error:'Payload tidak dikenali',raw:msg.payload}}];\n}\nconst values = p.slice(0,3).map(Number);\nif (!values.every(Number.isFinite)) return [null,{payload:{error:'Register bukan angka',raw:p}}];\nconst now = Date.now();\nconst previous = context.get('previousResponse');\nconst interval = previous === undefined ? null : now - previous;\ncontext.set('previousResponse',now);\nlet count = (context.get('responseCount') || 0) + 1;\ncontext.set('responseCount',count);\nlet total = context.get('totalInterval') || 0;\nlet samples = context.get('intervalSamples') || 0;\nif (interval !== null && interval > 0) { total += interval; samples++; context.set('totalInterval',total); context.set('intervalSamples',samples); }\nconst avg = samples > 0 ? Number((total/samples).toFixed(1)) : null;\nconst hz = avg > 0 ? Number((1000/avg).toFixed(2)) : null;\nconst chartMessages = values.map((v,i) => ({topic:['X','Y','Z'][i],payload:v,timestamp:now}));\nconst out = {\n sensor:'WTVB01-485',\n timestamp:new Date(now).toISOString(),\n unit_id:80,\n registers:{X:values[0],Y:values[1],Z:values[2]},\n response:{count:count,last_interval_ms:interval,average_interval_ms:avg,observed_response_hz:hz},\n note:'Register mentah. Pastikan scaling dan signedness dari manual sebelum menganggap nilai sebagai mm/s.'\n};\nreturn [chartMessages,{payload:out}];",
+        "outputs": 2,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 465,
+        "y": 60,
+        "wires": [
+            [
+                "wtvb_fast_chart"
+            ],
+            [
+                "wtvb_fast_debug",
+                "wtvb_fast_ui"
+            ]
+        ]
+    },
+    {
+        "id": "wtvb_fast_chart",
+        "type": "ui_chart",
+        "z": "wtvb_full_tab",
+        "name": "Live Chart XYZ",
+        "group": "wtvb_fast_group",
+        "order": 1,
+        "width": 12,
+        "height": 8,
+        "label": "Live Vibration XYZ - Raw Register",
+        "chartType": "line",
+        "legend": "true",
+        "xformat": "HH:mm:ss",
+        "interpolate": "linear",
+        "nodata": "Menunggu data sensor...",
+        "dot": false,
+        "ymin": "",
+        "ymax": "",
+        "removeOlder": "1",
+        "removeOlderPoints": "",
+        "removeOlderUnit": "60",
+        "cutout": 0,
+        "useOneColor": false,
+        "colors": [
+            "#1976D2",
+            "#E53935",
+            "#43A047"
+        ],
+        "outputs": 1,
+        "useDifferentColor": false,
+        "className": "",
+        "x": 745,
+        "y": 55,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "wtvb_fast_debug",
+        "type": "debug",
+        "z": "wtvb_full_tab",
+        "name": "XYZ + Response Rate",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "x": 765,
+        "y": 90,
+        "wires": []
+    },
+    {
+        "id": "wtvb_fast_ui",
+        "type": "ui_text",
+        "z": "wtvb_full_tab",
+        "group": "wtvb_fast_group",
+        "order": 2,
+        "width": 12,
+        "height": 2,
+        "name": "Status Sensor",
+        "label": "Status / Nilai Terbaru",
+        "format": "{{msg.payload.registers.X}} / {{msg.payload.registers.Y}} / {{msg.payload.registers.Z}}",
+        "layout": "row-spread",
+        "className": "",
+        "x": 745,
+        "y": 125,
+        "wires": []
+    },
+    {
+        "id": "wtvb_fast_client",
+        "type": "modbus-client",
+        "name": "COM6 9600 8N1 Slave 80",
+        "clienttype": "serial",
+        "bufferCommands": true,
+        "stateLogEnabled": false,
+        "tcpHost": "127.0.0.1",
+        "tcpPort": "502",
+        "tcpType": "DEFAULT",
+        "serialPort": "COM6",
+        "serialType": "RTU-BUFFERD",
+        "serialBaudrate": "9600",
+        "serialDatabits": "8",
+        "serialStopbits": "1",
+        "serialParity": "none",
+        "serialConnectionDelay": "100",
+        "serialAsciiResponseStartDelimiter": "0x3A",
+        "unit_id": "80",
+        "commandDelay": "10",
+        "clientTimeout": "1000",
+        "reconnectOnTimeout": true,
+        "reconnectTimeout": "2000"
+    },
+    {
+        "id": "wtvb_fast_group",
+        "type": "ui_group",
+        "name": "WTVB01-485",
+        "tab": "wtvb_fast_tab_ui",
+        "order": 1,
+        "disp": true,
+        "width": "12",
+        "collapse": false,
+        "className": ""
+    },
+    {
+        "id": "wtvb_fast_tab_ui",
+        "type": "ui_tab",
+        "name": "Vibration Monitor",
+        "icon": "dashboard",
+        "disabled": false,
+        "hidden": false
+    }
+]
